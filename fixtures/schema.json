@@ -1,0 +1,44 @@
+{
+  "root": "demo.v1.PeerUpdate",
+  "messages": {
+    "demo.v1.PeerUpdate": {
+      "fields": {
+        "1": {
+          "name": "router",
+          "type": "string"
+        },
+        "2": {
+          "name": "state",
+          "enum": "demo.v1.PeerState"
+        },
+        "3": {
+          "name": "delta",
+          "type": "sint64"
+        },
+        "4": {
+          "name": "active",
+          "type": "bool"
+        },
+        "5": {
+          "name": "location",
+          "message": "demo.v1.Location"
+        }
+      }
+    },
+    "demo.v1.Location": {
+      "fields": {
+        "1": {
+          "name": "city",
+          "type": "string"
+        }
+      }
+    }
+  },
+  "enums": {
+    "demo.v1.PeerState": {
+      "0": "PEER_STATE_UNSPECIFIED",
+      "1": "PEER_STATE_ESTABLISHED",
+      "2": "PEER_STATE_ACTIVE"
+    }
+  }
+}
