@@ -351,7 +351,7 @@ function omnibuf_proto.dissector(tvb, pinfo, tree)
     return 0
   end
 
-  -- Support TCP reassembly when a 5-byte envelope frame is split across TCP segments.
+  -- Support TCP / HTTP/2 streaming reassembly when a 5-byte envelope frame is split across segments/DATA frames.
   if pinfo.port_type == 2 and total_len >= 5 then -- 2 == PT_TCP
     local flags = tvb(0, 1):uint()
     local frame_len = tvb(1, 4):uint()
@@ -376,11 +376,15 @@ function omnibuf_proto.dissector(tvb, pinfo, tree)
     subtree:add(f_error, tvb(0, 0), "Schema load error: " .. tostring(schema_err)):set_generated()
   end
 
-  -- Check if payload is Connect/gRPC 5-byte length-prefixed envelope framed.
+  -- Check if payload is Connect/gRPC/gRPC-Web 5-byte length-prefixed envelope framed.
   -- First try raw OmniBuf unless it matches a clean 5-byte envelope stream.
   local is_envelope = false
   local media_type_field = pinfo.private and pinfo.private["media_type"] or nil
-  if type(media_type_field) == "string" and (media_type_field:find("connect%+", 1) or media_type_field:find("grpc%+", 1)) then
+  if type(media_type_field) == "string" and (
+    media_type_field:find("connect%+", 1)
+    or media_type_field:find("grpc%+", 1)
+    or media_type_field:find("grpc%-web%+", 1)
+  ) then
     is_envelope = true
   elseif looks_like_envelope(raw) then
     -- Verify whether decoding as raw message fails or envelope frames decode cleanly
@@ -434,19 +438,30 @@ function omnibuf_proto.dissector(tvb, pinfo, tree)
   return total_len
 end
 
--- Register media types for HTTP/1.1, HTTP/2, HTTP/3, Connect, and gRPC
+-- Register media types for HTTP/1.1, HTTP/2, HTTP/3, Connect, gRPC, and gRPC-Web
+local streaming_media_types = {
+  "application/connect+omnibuf",
+  "application/connect+x-omnibuf",
+  "application/grpc+omnibuf",
+  "application/grpc+x-omnibuf",
+  "application/grpc-web+omnibuf",
+  "application/grpc-web+x-omnibuf",
+}
+
 local media_table = DissectorTable.get("media_type")
 if media_table then
-  local media_types = {
-    "application/omnibuf",
-    "application/x-omnibuf",
-    "application/connect+omnibuf",
-    "application/connect+x-omnibuf",
-    "application/grpc+omnibuf",
-    "application/grpc+x-omnibuf",
-  }
-  for _, mt in ipairs(media_types) do
+  media_table:add("application/omnibuf", omnibuf_proto)
+  media_table:add("application/x-omnibuf", omnibuf_proto)
+  for _, mt in ipairs(streaming_media_types) do
     media_table:add(mt, omnibuf_proto)
+  end
+end
+
+-- Register streaming media types for HTTP/2 multi-DATA-frame reassembly
+local streaming_table = DissectorTable.get("streaming_content_type")
+if streaming_table then
+  for _, mt in ipairs(streaming_media_types) do
+    streaming_table:add(mt, omnibuf_proto)
   end
 end
 
