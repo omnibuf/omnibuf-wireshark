@@ -1007,18 +1007,18 @@ function M.load_schema_from_json(json_str)
     return nil, "JSON parse error: " .. tostring(err)
   end
 
-  local schema = {
-    root = raw.root,
-    messages = {},
-    enums = {},
-  }
-
   local function trim_leading_dot(name)
     if type(name) == "string" and str_sub(name, 1, 1) == "." then
       return str_sub(name, 2)
     end
     return name
   end
+
+  local schema = {
+    root = trim_leading_dot(raw.root),
+    messages = {},
+    enums = {},
+  }
 
   -- Format 1: Lightweight OmniBuf JSON schema
   if type(raw.messages) == "table" then
@@ -1058,8 +1058,29 @@ function M.load_schema_from_json(json_str)
     return schema, nil
   end
 
-  -- Format 2: Protobuf FileDescriptorSet JSON (`buf build -o schema.json`)
+  -- Format 2: Protobuf FileDescriptorSet JSON (`buf build -o schema.json` or `protoc`)
   if type(raw.file) == "table" then
+    local map_entries = {}
+    local fallback_root = nil
+
+    local function is_editions_file(file_desc)
+      if file_desc.syntax == "editions" then
+        return true
+      end
+      local ed = file_desc.edition
+      if type(ed) == "string" then
+        return str_sub(ed, 1, 10) == "EDITION_20"
+      elseif type(ed) == "number" then
+        return ed >= 1000
+      end
+      return false
+    end
+
+    local function is_message_type(ftype, is_editions)
+      return ftype == "TYPE_MESSAGE" or ftype == 11
+        or (is_editions and (ftype == "TYPE_GROUP" or ftype == 10))
+    end
+
     local function index_enum(prefix, enum_desc)
       local full = prefix ~= "" and (prefix .. "." .. enum_desc.name) or enum_desc.name
       local etable = {}
@@ -1073,8 +1094,30 @@ function M.load_schema_from_json(json_str)
       schema.enums[full] = etable
     end
 
-    local function index_message(prefix, msg_desc)
+    local function index_message(prefix, msg_desc, is_editions)
       local full = prefix ~= "" and (prefix .. "." .. msg_desc.name) or msg_desc.name
+      local opts = msg_desc.options
+      local is_map_entry = type(opts) == "table" and (opts.mapEntry == true or opts.map_entry == true)
+      if is_map_entry then
+        local val_msg, val_enum = nil, nil
+        if type(msg_desc.field) == "table" then
+          for _, f in ipairs(msg_desc.field) do
+            if tonumber(f.number) == 2 then
+              local tname = trim_leading_dot(f.typeName or f.type_name)
+              local ftype = f.type
+              if is_message_type(ftype, is_editions) then
+                val_msg = tname
+              elseif ftype == "TYPE_ENUM" or ftype == 14 then
+                val_enum = tname
+              end
+              break
+            end
+          end
+        end
+        map_entries[full] = { message = val_msg, enum = val_enum }
+        return
+      end
+
       local ftable = {}
       if type(msg_desc.field) == "table" then
         for _, f in ipairs(msg_desc.field) do
@@ -1083,7 +1126,7 @@ function M.load_schema_from_json(json_str)
             local entry = { name = f.name }
             local tname = trim_leading_dot(f.typeName or f.type_name)
             local ftype = f.type
-            if ftype == "TYPE_MESSAGE" or ftype == 11 then
+            if is_message_type(ftype, is_editions) then
               entry.message = tname
             elseif ftype == "TYPE_ENUM" or ftype == 14 then
               entry.enum = tname
@@ -1094,30 +1137,52 @@ function M.load_schema_from_json(json_str)
       end
       schema.messages[full] = ftable
       if not schema.root then
-        schema.root = full
+        if str_sub(full, 1, 16) ~= "google.protobuf." then
+          schema.root = full
+        elseif not fallback_root then
+          fallback_root = full
+        end
       end
-      if type(msg_desc.enumType) == "table" then
-        for _, e in ipairs(msg_desc.enumType) do
+      local nested_enums = msg_desc.enumType or msg_desc.enum_type
+      if type(nested_enums) == "table" then
+        for _, e in ipairs(nested_enums) do
           index_enum(full, e)
         end
       end
-      if type(msg_desc.nestedType) == "table" then
-        for _, nested in ipairs(msg_desc.nestedType) do
-          index_message(full, nested)
+      local nested_msgs = msg_desc.nestedType or msg_desc.nested_type
+      if type(nested_msgs) == "table" then
+        for _, nested in ipairs(nested_msgs) do
+          index_message(full, nested, is_editions)
         end
       end
     end
 
     for _, file_desc in ipairs(raw.file) do
       local pkg = file_desc.package or ""
-      if type(file_desc.enumType) == "table" then
-        for _, e in ipairs(file_desc.enumType) do
+      local is_editions = is_editions_file(file_desc)
+      local file_enums = file_desc.enumType or file_desc.enum_type
+      if type(file_enums) == "table" then
+        for _, e in ipairs(file_enums) do
           index_enum(pkg, e)
         end
       end
-      if type(file_desc.messageType) == "table" then
-        for _, m in ipairs(file_desc.messageType) do
-          index_message(pkg, m)
+      local file_msgs = file_desc.messageType or file_desc.message_type
+      if type(file_msgs) == "table" then
+        for _, m in ipairs(file_msgs) do
+          index_message(pkg, m, is_editions)
+        end
+      end
+    end
+
+    if not schema.root then
+      schema.root = fallback_root
+    end
+    for _, ftable in pairs(schema.messages) do
+      for _, entry in pairs(ftable) do
+        if entry.message and map_entries[entry.message] then
+          local unwrapped = map_entries[entry.message]
+          entry.message = unwrapped.message
+          entry.enum = unwrapped.enum
         end
       end
     end

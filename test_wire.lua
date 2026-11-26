@@ -131,6 +131,246 @@ do
   assert_eq(s2.enums["demo.v1.PeerState"][1], "ESTABLISHED", "fds enum val")
 end
 
+-- 5. Protobuf Editions 2023, 2024, and 2026 FileDescriptorSet JSON + explicit presence / open enums
+do
+  -- 5a. Edition 2023 camelCase (buf build / protojson) with DELIMITED (TYPE_MESSAGE) and mapEntry
+  local ed2023_camel = [[{
+    "file": [{
+      "name": "ed2023.proto",
+      "package": "demo.ed2023",
+      "syntax": "editions",
+      "edition": "EDITION_2023",
+      "enumType": [{
+        "name": "OpenStatus",
+        "value": [
+          { "name": "OPEN_STATUS_UNSPECIFIED", "number": 0 },
+          { "name": "OPEN_STATUS_READY", "number": 1 }
+        ]
+      }],
+      "messageType": [
+        {
+          "name": "Record",
+          "field": [
+            { "name": "exp_i32", "number": 1, "type": "TYPE_SINT32" },
+            { "name": "exp_bool", "number": 2, "type": "TYPE_BOOL" },
+            { "name": "exp_enum", "number": 3, "type": "TYPE_ENUM", "typeName": ".demo.ed2023.OpenStatus" },
+            {
+              "name": "delim_child",
+              "number": 4,
+              "type": "TYPE_MESSAGE",
+              "typeName": ".demo.ed2023.Child",
+              "options": { "features": { "messageEncoding": "DELIMITED" } }
+            },
+            { "name": "scores", "number": 5, "type": "TYPE_MESSAGE", "typeName": ".demo.ed2023.Record.ScoresEntry" },
+            { "name": "children_by_key", "number": 6, "type": "TYPE_MESSAGE", "typeName": ".demo.ed2023.Record.ChildrenByKeyEntry" },
+            { "name": "statuses", "number": 7, "type": "TYPE_MESSAGE", "typeName": ".demo.ed2023.Record.StatusesEntry" }
+          ],
+          "nestedType": [
+            {
+              "name": "ScoresEntry",
+              "field": [
+                { "name": "key", "number": 1, "type": "TYPE_STRING" },
+                { "name": "value", "number": 2, "type": "TYPE_SINT32" }
+              ],
+              "options": { "mapEntry": true }
+            },
+            {
+              "name": "ChildrenByKeyEntry",
+              "field": [
+                { "name": "key", "number": 1, "type": "TYPE_STRING" },
+                { "name": "value", "number": 2, "type": "TYPE_MESSAGE", "typeName": ".demo.ed2023.Child" }
+              ],
+              "options": { "mapEntry": true }
+            },
+            {
+              "name": "StatusesEntry",
+              "field": [
+                { "name": "key", "number": 1, "type": "TYPE_STRING" },
+                { "name": "value", "number": 2, "type": "TYPE_ENUM", "typeName": ".demo.ed2023.OpenStatus" }
+              ],
+              "options": { "mapEntry": true }
+            }
+          ]
+        },
+        {
+          "name": "Child",
+          "field": [
+            { "name": "id", "number": 1, "type": "TYPE_SINT32" },
+            { "name": "label", "number": 2, "type": "TYPE_STRING" }
+          ]
+        }
+      ]
+    }]
+  }]]
+  local s23, err23 = wire.load_schema_from_json(ed2023_camel)
+  assert_eq(err23, nil, "ed2023 camel schema load")
+  assert_eq(s23.root, "demo.ed2023.Record", "ed2023 root")
+  assert_eq(s23.messages["demo.ed2023.Record"][4].message, "demo.ed2023.Child", "ed2023 delim_child")
+  assert_eq(s23.messages["demo.ed2023.Record"][5].message, nil, "ed2023 scalar map unwrapped msg nil")
+  assert_eq(s23.messages["demo.ed2023.Record"][5].enum, nil, "ed2023 scalar map unwrapped enum nil")
+  assert_eq(s23.messages["demo.ed2023.Record"][6].message, "demo.ed2023.Child", "ed2023 child map unwrapped")
+  assert_eq(s23.messages["demo.ed2023.Record"][7].message, nil, "ed2023 enum map msg nil")
+  assert_eq(s23.messages["demo.ed2023.Record"][7].enum, "demo.ed2023.OpenStatus", "ed2023 enum map unwrapped")
+  assert_eq(s23.messages["demo.ed2023.Record.ChildrenByKeyEntry"], nil, "ed2023 synthetic entry omitted")
+  assert_eq(s23.enums["demo.ed2023.OpenStatus"][0], "OPEN_STATUS_UNSPECIFIED", "ed2023 enum zero")
+  assert_eq(s23.enums["demo.ed2023.OpenStatus"][1], "OPEN_STATUS_READY", "ed2023 enum ready")
+  assert_eq(s23.enums["demo.ed2023.OpenStatus"][99], nil, "ed2023 open enum unknown")
+
+  -- 5b. Edition 2024 snake_case (protoc / UseProtoNames) with TYPE_GROUP DELIMITED and map_entry
+  local ed2024_snake = [[{
+    "file": [{
+      "name": "ed2024.proto",
+      "package": "demo.ed2024",
+      "syntax": "editions",
+      "edition": "EDITION_2024",
+      "enum_type": [{
+        "name": "OpenStatus",
+        "value": [
+          { "name": "OPEN_STATUS_UNSPECIFIED", "number": 0 },
+          { "name": "OPEN_STATUS_READY", "number": 1 }
+        ]
+      }],
+      "message_type": [
+        {
+          "name": "Record",
+          "visibility": "VISIBILITY_EXPORT",
+          "field": [
+            { "name": "delim_child", "number": 1, "type": "TYPE_GROUP", "type_name": ".demo.ed2024.Child" },
+            { "name": "children_by_key", "number": 2, "type": "TYPE_MESSAGE", "type_name": ".demo.ed2024.Record.ChildrenByKeyEntry" },
+            { "name": "statuses", "number": 3, "type": "TYPE_MESSAGE", "type_name": ".demo.ed2024.Record.StatusesEntry" }
+          ],
+          "nested_type": [
+            {
+              "name": "ChildrenByKeyEntry",
+              "field": [
+                { "name": "key", "number": 1, "type": "TYPE_STRING" },
+                { "name": "value", "number": 2, "type": "TYPE_MESSAGE", "type_name": ".demo.ed2024.Child" }
+              ],
+              "options": { "map_entry": true }
+            },
+            {
+              "name": "StatusesEntry",
+              "field": [
+                { "name": "key", "number": 1, "type": "TYPE_STRING" },
+                { "name": "value", "number": 2, "type": "TYPE_ENUM", "type_name": ".demo.ed2024.OpenStatus" }
+              ],
+              "options": { "map_entry": true }
+            }
+          ],
+          "enum_type": [{
+            "name": "NestedCode",
+            "value": [{ "name": "NESTED_CODE_OK", "number": 0 }]
+          }]
+        },
+        {
+          "name": "Child",
+          "field": [{ "name": "id", "number": 1, "type": "TYPE_SINT32" }]
+        }
+      ]
+    }]
+  }]]
+  local s24, err24 = wire.load_schema_from_json(ed2024_snake)
+  assert_eq(err24, nil, "ed2024 snake schema load")
+  assert_eq(s24.root, "demo.ed2024.Record", "ed2024 root")
+  assert_eq(s24.messages["demo.ed2024.Record"][1].message, "demo.ed2024.Child", "ed2024 TYPE_GROUP delim")
+  assert_eq(s24.messages["demo.ed2024.Record"][2].message, "demo.ed2024.Child", "ed2024 snake map child")
+  assert_eq(s24.messages["demo.ed2024.Record"][3].enum, "demo.ed2024.OpenStatus", "ed2024 snake map enum")
+  assert_eq(s24.enums["demo.ed2024.Record.NestedCode"][0], "NESTED_CODE_OK", "ed2024 nested enum")
+
+  -- 5c. Edition 2026 numeric types (10/11/14) + google.protobuf import before user file
+  local ed2026_num = [[{
+    "file": [
+      {
+        "name": "google/protobuf/descriptor.proto",
+        "package": "google.protobuf",
+        "syntax": "proto2",
+        "message_type": [{ "name": "FileDescriptorSet", "field": [] }]
+      },
+      {
+        "name": "ed2026.proto",
+        "package": "demo.ed2026",
+        "syntax": "editions",
+        "edition": "EDITION_2026",
+        "enum_type": [{
+          "name": "OpenStatus",
+          "value": [
+            { "name": "OPEN_STATUS_UNSPECIFIED", "number": 0 },
+            { "name": "OPEN_STATUS_READY", "number": 1 }
+          ]
+        }],
+        "message_type": [
+          {
+            "name": "Record",
+            "field": [
+              { "name": "delim_child", "number": 1, "type": 10, "type_name": ".demo.ed2026.Child" },
+              { "name": "status", "number": 2, "type": 14, "type_name": ".demo.ed2026.OpenStatus" },
+              { "name": "children_by_key", "number": 3, "type": 11, "type_name": ".demo.ed2026.Record.ChildrenByKeyEntry" }
+            ],
+            "nested_type": [{
+              "name": "ChildrenByKeyEntry",
+              "field": [
+                { "name": "key", "number": 1, "type": 9 },
+                { "name": "value", "number": 2, "type": 11, "type_name": ".demo.ed2026.Child" }
+              ],
+              "options": { "map_entry": true }
+            }]
+          },
+          {
+            "name": "Child",
+            "field": [{ "name": "id", "number": 1, "type": 17 }]
+          }
+        ]
+      }
+    ]
+  }]]
+  local s26, err26 = wire.load_schema_from_json(ed2026_num)
+  assert_eq(err26, nil, "ed2026 numeric schema load")
+  assert_eq(s26.root, "demo.ed2026.Record", "ed2026 root skips google.protobuf")
+  assert_eq(s26.messages["demo.ed2026.Record"][1].message, "demo.ed2026.Child", "ed2026 numeric TYPE_GROUP 10")
+  assert_eq(s26.messages["demo.ed2026.Record"][2].enum, "demo.ed2026.OpenStatus", "ed2026 numeric TYPE_ENUM 14")
+  assert_eq(s26.messages["demo.ed2026.Record"][3].message, "demo.ed2026.Child", "ed2026 numeric map child")
+
+  -- 5d. proto2 TYPE_GROUP must NOT be resolved as Editions DELIMITED
+  local proto2_grp = [[{
+    "file": [{
+      "package": "legacy.v1",
+      "syntax": "proto2",
+      "messageType": [{
+        "name": "Holder",
+        "field": [
+          { "name": "g1", "number": 1, "type": "TYPE_GROUP", "typeName": ".legacy.v1.Holder.G" },
+          { "name": "g2", "number": 2, "type": 10, "typeName": ".legacy.v1.Holder.G" }
+        ]
+      }]
+    }]
+  }]]
+  local sp2, errp2 = wire.load_schema_from_json(proto2_grp)
+  assert_eq(errp2, nil, "proto2 group schema load")
+  assert_eq(sp2.messages["legacy.v1.Holder"][1].message, nil, "proto2 TYPE_GROUP ignored")
+  assert_eq(sp2.messages["legacy.v1.Holder"][2].message, nil, "proto2 numeric 10 ignored")
+
+  -- 5e. Explicit-presence zero / WireBoolFalse / empty string / open enum wire decoding
+  local explicit_pkt = table.concat({
+    wire.encode_varint((1 << 4) | wire.WIRE_SINT) .. wire.encode_varint(0),
+    wire.encode_varint((2 << 4) | wire.WIRE_BOOL_FALSE),
+    wire.encode_string_field(3, ""),
+    wire.encode_varint((4 << 4) | wire.WIRE_UINT) .. wire.encode_varint(0),
+    wire.encode_varint((5 << 4) | wire.WIRE_UINT) .. wire.encode_varint(99),
+  })
+  local dec, derr = wire.decode_message(explicit_pkt)
+  assert_eq(derr, nil, "explicit presence decode")
+  assert_eq(#dec.fields, 5, "explicit presence field count")
+  assert_eq(dec.fields[1].value, 0, "explicit zero sint")
+  assert_eq(dec.fields[2].wire_type, wire.WIRE_BOOL_FALSE, "explicit WireBoolFalse wt")
+  assert_eq(dec.fields[2].value, false, "explicit WireBoolFalse value")
+  assert_eq(dec.fields[3].value, "", "explicit empty string")
+  assert_eq(dec.fields[4].value, 0, "explicit zero enum")
+  assert_eq(dec.fields[5].value, 99, "open enum unknown int")
+  local bjson, berr = wire.decode_blind_json(explicit_pkt)
+  assert_eq(berr, nil, "explicit presence blind json")
+  assert_eq(bjson, '{"field_1":0,"field_2":false,"field_3":"","field_4":0,"field_5":99}', "explicit presence blind json exact")
+end
+
 -- Deep equality helper for comparing parsed blind JSON against expected_blind.
 local function deep_equal(a, b, path)
   path = path or "$"
